@@ -3,7 +3,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { run } from "../lib/exec.js";
-import { resolveTool, ToolNotFoundError } from "../lib/toolchain.js";
+import { resolveTool, resolveSdkHome, ToolNotFoundError } from "../lib/toolchain.js";
 import { ok, errorResult, ToolResult, truncate } from "../lib/result.js";
 import { getDefaults } from "../lib/session.js";
 import { loadProjectInfo } from "../lib/project.js";
@@ -43,9 +43,16 @@ export async function handleBuild(args: unknown): Promise<ToolResult> {
   const tool = resolveTool("hvigorw");
   if (!tool) return errorResult(new ToolNotFoundError("hvigorw").message);
 
+  const env: NodeJS.ProcessEnv = {};
+  if (!process.env.DEVECO_SDK_HOME) {
+    const sdk = resolveSdkHome();
+    if (sdk) env.DEVECO_SDK_HOME = sdk.path;
+  }
+
   if (a.clean) {
     const cleanRun = await run(tool.path, ["clean", "--no-daemon"], {
       cwd: projectDir,
+      env,
       timeoutMs: 120000,
     });
     if (cleanRun.exitCode !== 0) {
@@ -65,6 +72,7 @@ export async function handleBuild(args: unknown): Promise<ToolResult> {
 
   const r = await run(tool.path, cliArgs, {
     cwd: projectDir,
+    env,
     timeoutMs: 600000,
   });
 

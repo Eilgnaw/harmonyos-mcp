@@ -13,6 +13,11 @@ type Resolved = {
   source: "PATH" | "DEVECO_STUDIO_HOME" | "default-install" | "project-local";
 };
 
+export type SdkResolved = {
+  path: string;
+  source: "DEVECO_SDK_HOME" | "DEVECO_STUDIO_HOME" | "default-install" | "user-sdk";
+};
+
 const isWin = platform() === "win32";
 
 function exeName(name: ToolName): string {
@@ -89,6 +94,54 @@ export function resolveTool(name: ToolName): Resolved | null {
   return null;
 }
 
+function userSdkRoots(): string[] {
+  const roots: string[] = [];
+  if (isWin) {
+    const localAppData = process.env["LOCALAPPDATA"];
+    if (localAppData) roots.push(join(localAppData, "Huawei", "Sdk"));
+    const userProfile = process.env["USERPROFILE"];
+    if (userProfile) roots.push(join(userProfile, "AppData", "Local", "Huawei", "Sdk"));
+  } else if (platform() === "darwin") {
+    roots.push(join(homedir(), "Library", "Huawei", "Sdk"));
+  }
+  return roots;
+}
+
+const sdkCache: { value: SdkResolved | null | undefined } = { value: undefined };
+
+export function resolveSdkHome(): SdkResolved | null {
+  if (sdkCache.value !== undefined) return sdkCache.value;
+
+  const envSdk = process.env.DEVECO_SDK_HOME;
+  if (envSdk && existsSync(envSdk)) {
+    const r: SdkResolved = { path: envSdk, source: "DEVECO_SDK_HOME" };
+    sdkCache.value = r;
+    return r;
+  }
+
+  for (const root of devecoRoots()) {
+    const sdk = join(root, "sdk");
+    if (existsSync(sdk)) {
+      const source: SdkResolved["source"] =
+        process.env.DEVECO_STUDIO_HOME === root ? "DEVECO_STUDIO_HOME" : "default-install";
+      const r: SdkResolved = { path: sdk, source };
+      sdkCache.value = r;
+      return r;
+    }
+  }
+
+  for (const root of userSdkRoots()) {
+    if (existsSync(root)) {
+      const r: SdkResolved = { path: root, source: "user-sdk" };
+      sdkCache.value = r;
+      return r;
+    }
+  }
+
+  sdkCache.value = null;
+  return null;
+}
+
 export function requireTool(name: ToolName): string {
   const r = resolveTool(name);
   if (!r) {
@@ -121,6 +174,7 @@ function toolNotFoundMessage(name: ToolName): string {
 export type ToolchainStatus = {
   ok: boolean;
   tools: Record<ToolName, { found: boolean; path?: string; source?: Resolved["source"]; version?: string; error?: string }>;
+  sdk: { found: boolean; path?: string; source?: SdkResolved["source"]; error?: string };
 };
 
 export async function probeToolchain(): Promise<ToolchainStatus> {
@@ -139,8 +193,12 @@ export async function probeToolchain(): Promise<ToolchainStatus> {
     }
     tools[name] = { found: true, path: r.path, source: r.source, version };
   }
-  const ok = (Object.values(tools) as Array<{ found: boolean }>).every((t) => t.found);
-  return { ok, tools };
+  const sdkResolved = resolveSdkHome();
+  const sdk: ToolchainStatus["sdk"] = sdkResolved
+    ? { found: true, path: sdkResolved.path, source: sdkResolved.source }
+    : { found: false, error: "DEVECO_SDK_HOME unset and no SDK found at standard locations" };
+  const ok = (Object.values(tools) as Array<{ found: boolean }>).every((t) => t.found) && sdk.found;
+  return { ok, tools, sdk };
 }
 
 async function probeVersion(name: ToolName, path: string): Promise<string | undefined> {

@@ -7,7 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { allTools, callTool } from "./tools/index.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 
 const INSTRUCTIONS = `
 This MCP server wraps HarmonyOS dev CLIs (hdc, hvigorw, Emulator).

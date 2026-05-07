@@ -23,7 +23,15 @@ The server auto-locates the CLIs in this order:
    - macOS: `/Applications/DevEco-Studio.app/Contents`
    - Windows: `%ProgramFiles%\Huawei\DevEco Studio`
 
-If none match, `session_show_defaults` reports the missing tool with a fix suggestion.
+It also resolves the HarmonyOS SDK and injects `DEVECO_SDK_HOME` into the
+`hvigorw` invocation if the env var isn't already set, checking:
+1. `DEVECO_SDK_HOME` env var
+2. `<DevEco>/sdk` under any DevEco install root
+3. Standalone SDK locations:
+   - macOS: `~/Library/Huawei/Sdk`
+   - Windows: `%LOCALAPPDATA%\Huawei\Sdk`
+
+If none match, `session_show_defaults` reports the missing tool/sdk with a fix suggestion.
 
 ## Install
 
@@ -125,6 +133,7 @@ need to disable destructive tools, fork and remove them from `src/tools/index.ts
 | Symptom | Likely cause |
 |---|---|
 | `Could not locate 'hdc'` | DevEco not installed, or `DEVECO_STUDIO_HOME` wrong. |
+| `build` fails with `00303217 Configuration Error: Invalid value of 'DEVECO_SDK_HOME'` | SDK not auto-detected. Set `DEVECO_SDK_HOME` in the MCP server's `env` block to your SDK root (e.g. `~/Library/Huawei/Sdk` or `<DevEco>/Contents/sdk`). |
 | `emu_start` says emulator didn't appear in hdc | First boot can exceed 60 s. Re-run with `waitForHdcMs: 120000`, or check DevEco Device Manager. |
 | `install` fails with signing error | See Signing above. |
 | `ui_dump` returns "Group" with everything inside | Filter mismatch — your bundle isn't in front. Pass `noBundleFilter: true` or set `bundleName` correctly. |

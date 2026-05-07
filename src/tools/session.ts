@@ -35,6 +35,11 @@ export async function handleSessionShow(_args: unknown): Promise<ToolResult> {
       lines.push(`  ${name}: ${t.path}${t.version ? ` (${t.version})` : ""} [${t.source}]`);
     }
   }
+  if (toolchain.sdk.found) {
+    lines.push(`  sdk: ${toolchain.sdk.path} [${toolchain.sdk.source}]`);
+  } else {
+    lines.push(`  sdk: NOT FOUND — set DEVECO_SDK_HOME or install DevEco Studio`);
+  }
   return ok(lines.join("\n"), { defaults, toolchain });
 }
 
