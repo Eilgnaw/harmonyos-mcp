@@ -1,0 +1,15 @@
+node_modules
+dist
+*.log
+.DS_Store
+.env
+.env.local
+
+# tooling caches that aren't part of this MCP project
+.hvigor/
+.claude/
+
+# reference docs (not original; not meant for public distribution)
+hdc.md
+sim.md
+platform-mcp-guide.md

@@ -1,0 +1,49 @@
+{
+  "name": "harmonyos-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for HarmonyOS development: build, install, launch, UI automation against emulators via hdc / hvigorw / Emulator.",
+  "type": "module",
+  "bin": {
+    "harmonyos-mcp": "./dist/server.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "harmonyos",
+    "deveco",
+    "claude-code",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "author": "Eilgnaw <wzqwzq666@hotmail.com>",
+  "homepage": "https://github.com/Eilgnaw/harmonyos-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Eilgnaw/harmonyos-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Eilgnaw/harmonyos-mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}
