@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { ok, errorResult, okWith, ToolResult, truncate } from "../lib/result.js";
 import { getDefaults } from "../lib/session.js";
 import { hdcShell, hdcFileRecv, deviceTmpPath } from "../lib/hdc.js";
@@ -23,15 +24,35 @@ function localTmp(suffix: string): string {
 
 const ScreenshotArgs = z.object({
   deviceSn: z.string().optional(),
-  savePath: z.string().optional().describe("If set, also keep a copy at this local path."),
-  embedImage: z.boolean().optional().describe("If true (default), include the PNG as image content. Set false for path-only response."),
+  savePath: z.string().optional().describe("If set, also keep a copy at this local path. Saved copy is always the original PNG (no compression)."),
+  embedImage: z.boolean().optional().describe("If true (default), include the image as image content. Set false for path-only response."),
+  maxDimension: z.number().int().min(64).max(4096).optional().describe("Max width/height for the embedded image, in px. Default 1080. Token cost scales with dimensions, so smaller = cheaper. Set 0 to disable resize."),
+  quality: z.number().int().min(1).max(100).optional().describe("JPEG quality for the embedded image (1-100). Default 70."),
+  raw: z.boolean().optional().describe("Skip compression and embed the raw PNG. Default false."),
 });
 
 export const screenshotTool = {
   name: "screenshot",
-  description: "Capture the current screen as a PNG. Returns the image inline (base64) by default.",
+  description: "Capture the current screen. Embedded image is downscaled + JPEG-encoded by default (via sharp) to cut token cost while staying readable. Use raw:true for original PNG.",
   inputSchema: zodToJsonSchema(ScreenshotArgs, { target: "openApi3" }) as Record<string, unknown>,
 };
+
+async function compressForEmbed(
+  pngPath: string, maxDim: number, quality: number
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  try {
+    let pipeline = sharp(pngPath);
+    if (maxDim > 0) {
+      pipeline = pipeline.resize({
+        width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true,
+      });
+    }
+    const buffer = await pipeline.jpeg({ quality, mozjpeg: true }).toBuffer();
+    return { buffer, mimeType: "image/jpeg" };
+  } catch {
+    return null;
+  }
+}
 
 export async function handleScreenshot(args: unknown): Promise<ToolResult> {
   const a = ScreenshotArgs.parse(args);
@@ -56,25 +77,47 @@ export async function handleScreenshot(args: unknown): Promise<ToolResult> {
 
   const embed = a.embedImage ?? true;
   const stat = statSync(local);
-  const sizeKb = Math.round(stat.size / 1024);
+  const origKb = Math.round(stat.size / 1024);
 
   if (!embed) {
-    return ok(`Screenshot saved: ${local} (${sizeKb} KB)`, { localPath: local, sizeBytes: stat.size });
+    return ok(`Screenshot saved: ${local} (${origKb} KB)`, { localPath: local, sizeBytes: stat.size });
   }
 
-  const buf = readFileSync(local);
-  const data = buf.toString("base64");
+  let embedBuf: Buffer;
+  let embedMime = "image/png";
+  if (!(a.raw ?? false)) {
+    const compressed = await compressForEmbed(local, a.maxDimension ?? 1080, a.quality ?? 70);
+    if (compressed) {
+      embedBuf = compressed.buffer;
+      embedMime = compressed.mimeType;
+    } else {
+      embedBuf = readFileSync(local);
+    }
+  } else {
+    embedBuf = readFileSync(local);
+  }
+
+  const embedKb = Math.round(embedBuf.length / 1024);
+  const data = embedBuf.toString("base64");
 
   if (!a.savePath) {
     try { unlinkSync(local); } catch { /* best effort */ }
   }
 
+  const compressedNote = embedMime === "image/jpeg"
+    ? ` (compressed from ${origKb} KB PNG)`
+    : "";
   return okWith(
     [
-      { type: "text", text: `Screenshot ${sizeKb} KB${a.savePath ? ` saved to ${local}` : ""}.` },
-      { type: "image", data, mimeType: "image/png" },
+      { type: "text", text: `Screenshot ${embedKb} KB${compressedNote}${a.savePath ? `, original saved to ${local}` : ""}.` },
+      { type: "image", data, mimeType: embedMime },
     ],
-    { localPath: a.savePath ? local : undefined, sizeBytes: stat.size }
+    {
+      localPath: a.savePath ? local : undefined,
+      sizeBytes: stat.size,
+      embedSizeBytes: embedBuf.length,
+      embedMime,
+    }
   );
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "harmonyos-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server for HarmonyOS development: build, install, launch, UI automation against emulators via hdc / hvigorw / Emulator.",
   "type": "module",
   "bin": {
@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "sharp": "^0.33.0",
     "zod": "^3.23.0",
     "zod-to-json-schema": "^3.23.0"
   },

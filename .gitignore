@@ -5,6 +5,11 @@ dist
 .env
 .env.local
 
+# local screenshot artifacts
+screen-test.*
+*.screenshot.png
+*.screenshot.jpg
+
 # tooling caches that aren't part of this MCP project
 .hvigor/
 .claude/
