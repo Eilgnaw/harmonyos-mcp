@@ -153,6 +153,10 @@ npx tsx src/__smoke__.ts ui     # tries ui_dump + screenshot
 npx tsx src/__smoke__.ts logs   # tries logs_dump + start/stop
 ```
 
+## Links
+
+- **[Linux.do](https://linux.do)**
+
 ## License
 
 MIT

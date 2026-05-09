@@ -24,16 +24,22 @@ function localTmp(suffix: string): string {
 
 const ScreenshotArgs = z.object({
   deviceSn: z.string().optional(),
-  savePath: z.string().optional().describe("If set, also keep a copy at this local path. Saved copy is always the original PNG (no compression)."),
-  embedImage: z.boolean().optional().describe("If true (default), include the image as image content. Set false for path-only response."),
+  savePath: z.string().optional().describe("If set, also keep a copy at this local path. Saved copy is the original PNG. Use this for a permanent record only — DO NOT read this file back via your file-read tool to look at the UI; the embedded image already in the response is the canonical view."),
+  embedImage: z.boolean().optional().describe("If true (default), include the downscaled JPEG as image content. Set false only when you don't need to look at the screen now (e.g. archival capture)."),
   maxDimension: z.number().int().min(64).max(4096).optional().describe("Max width/height for the embedded image, in px. Default 1080. Token cost scales with dimensions, so smaller = cheaper. Set 0 to disable resize."),
   quality: z.number().int().min(1).max(100).optional().describe("JPEG quality for the embedded image (1-100). Default 70."),
-  raw: z.boolean().optional().describe("Skip compression and embed the raw PNG. Default false."),
+  raw: z.boolean().optional().describe("Skip compression and embed the raw PNG. Default false. Avoid unless you genuinely need pixel-perfect detail (1px borders, tiny glyphs) — the raw PNG is multi-MB and burns context."),
 });
 
 export const screenshotTool = {
   name: "screenshot",
-  description: "Capture the current screen. Embedded image is downscaled + JPEG-encoded by default (via sharp) to cut token cost while staying readable. Use raw:true for original PNG.",
+  description: [
+    "Capture the current screen.",
+    "Default behavior: returns a downscaled (maxDimension 1080) JPEG (quality 70) embedded directly in the tool response — this is the image you should look at to judge UI state. Typical embed is 15–35 KB.",
+    "DO NOT separately read the file at savePath via a file-read tool after calling this — that re-ingests the same screenshot at full 1256×~2760 PNG resolution (often several MB) and doubles token cost for zero new information. The embedded JPEG is already there.",
+    "Only fall back to reading the saved PNG (or passing raw:true) when you genuinely need pixel-perfect detail the JPEG hides (1px borders, tiny glyph anti-aliasing).",
+    "Pass embedImage:false only when you're capturing for archival and don't need to look at the screen this turn.",
+  ].join(" "),
   inputSchema: zodToJsonSchema(ScreenshotArgs, { target: "openApi3" }) as Record<string, unknown>,
 };
 
