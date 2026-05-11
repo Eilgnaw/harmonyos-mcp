@@ -39,15 +39,22 @@ export type SlimOptions = {
   compact?: boolean;
 };
 
-export function slimDump(rawJsonText: string, opts: SlimOptions = {}): SlimNode {
+export type SlimDumpResult = {
+  tree: SlimNode;
+  /** Bounds of the outermost raw node (always full screen, even when the filtered tree shrinks under keyboard occlusion). */
+  screenBounds?: string;
+};
+
+export function slimDump(rawJsonText: string, opts: SlimOptions = {}): SlimDumpResult {
   const root = JSON.parse(rawJsonText);
+  const screenBounds = (root?.attributes?.bounds as string | undefined) ?? undefined;
   const bundleFilter = opts.bundleFilter;
   const onlyInteractive = opts.onlyInteractive ?? false;
   const includeBounds = opts.includeBounds ?? true;
   const compact = opts.compact ?? true;
   let slimmed = walk(root, { bundleFilter, onlyInteractive, includeBounds });
   if (slimmed && compact) slimmed = compactTree(slimmed);
-  return slimmed ?? { type: "(empty)" };
+  return { tree: slimmed ?? { type: "(empty)" }, screenBounds };
 }
 
 function nodeHasSemantics(n: SlimNode): boolean {

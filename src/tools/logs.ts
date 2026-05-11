@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { randomUUID } from "node:crypto";
-import { ChildProcess } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { run, spawnBackground } from "../lib/exec.js";
 import { hdcPath } from "../lib/hdc.js";
 import { ok, errorResult, ToolResult, truncate } from "../lib/result.js";
@@ -162,6 +162,99 @@ export async function handleLogsStop(args: unknown): Promise<ToolResult> {
   const header = `Captured ${lines.length} line(s) over ${(elapsedMs / 1000).toFixed(1)}s${a.grep ? ` (grep=${a.grep})` : ""}`;
   const body = text || "(empty)";
   return ok(`${header}\n\n${body}${stderr ? `\n\n[stderr]\n${truncate(stderr, 1000)}` : ""}`);
+}
+
+// ---------- wait_for_log ----------
+
+const WaitForLogArgs = FilterFields.extend({
+  deviceSn: z.string().optional(),
+  pattern: z.string().describe("Regex matched against each streamed log line (full line, including the hilog prefix)."),
+  timeoutMs: z.number().int().min(500).max(300000).optional().describe("Max wait. Default 15000."),
+  contextLines: z.number().int().min(0).max(50).optional().describe("Number of preceding lines to include in the result. Default 3."),
+  tailOnTimeout: z.number().int().min(0).max(200).optional().describe("If timeout fires, include the last N captured lines as a diagnostic tail. Default 20."),
+});
+
+export const waitForLogTool = {
+  name: "wait_for_log",
+  description:
+    "Block until a hilog line matches `pattern` (or timeout). Streams hilog with the same filters as logs_start/logs_dump. " +
+    "Useful for waiting on app start (`Displayed`), errors, or specific events without polling logs_dump.",
+  inputSchema: zodToJsonSchema(WaitForLogArgs, { target: "openApi3" }) as Record<string, unknown>,
+};
+
+export async function handleWaitForLog(args: unknown): Promise<ToolResult> {
+  const a = WaitForLogArgs.parse(args);
+  const sn = sessionDevice(a.deviceSn);
+  if (!sn) return errorResult("No deviceSn.");
+
+  let re: RegExp;
+  try { re = new RegExp(a.pattern); }
+  catch (e: any) { return errorResult(`Invalid pattern regex: ${e.message}`); }
+
+  const timeoutMs = a.timeoutMs ?? 15000;
+  const contextLines = a.contextLines ?? 3;
+  const tailOnTimeout = a.tailOnTimeout ?? 20;
+  const filters = { tag: a.tag, domain: a.domain, level: a.level, pid: a.pid, regex: a.regex };
+  const cmdArgs = buildHilogArgs(sn, filters, false);
+
+  return new Promise<ToolResult>((resolve) => {
+    const proc = spawn(hdcPath(), cmdArgs, { stdio: ["ignore", "pipe", "pipe"] });
+    const startedAt = Date.now();
+    const recent: string[] = [];
+    const recentCap = Math.max(contextLines, tailOnTimeout, 20);
+    let pending = "";
+    let settled = false;
+
+    const cleanup = () => { try { proc.kill("SIGTERM"); } catch { /* best effort */ } };
+    const finish = (result: ToolResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      resolve(result);
+    };
+
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      pending += chunk.toString();
+      const parts = pending.split("\n");
+      pending = parts.pop() ?? "";
+      for (const line of parts) {
+        if (re.test(line)) {
+          const tail = recent.slice(-contextLines);
+          const body = tail.length > 0 ? `${tail.join("\n")}\n${line}` : line;
+          const elapsedMs = Date.now() - startedAt;
+          finish(ok(
+            `wait_for_log matched in ${elapsedMs} ms (/${a.pattern}/):\n\n${body}`,
+            { matched: true, elapsedMs, matchedLine: line }
+          ));
+          return;
+        }
+        recent.push(line);
+        if (recent.length > recentCap) recent.splice(0, recent.length - recentCap);
+      }
+    });
+
+    proc.on("error", (err) => {
+      finish(errorResult(`wait_for_log: failed to spawn hilog: ${err.message}`));
+    });
+
+    proc.on("exit", (code) => {
+      if (settled) return;
+      const tail = recent.slice(-tailOnTimeout).join("\n").trim();
+      finish(errorResult(
+        `wait_for_log: hilog exited (code=${code}) before pattern matched.` +
+        (tail ? `\n\nLast captured lines:\n${tail}` : "")
+      ));
+    });
+
+    const timer = setTimeout(() => {
+      const tail = recent.slice(-tailOnTimeout).join("\n").trim();
+      finish(errorResult(
+        `wait_for_log timed out after ${timeoutMs} ms waiting for /${a.pattern}/.` +
+        (tail ? `\n\nLast captured lines:\n${tail}` : "\n(no log lines captured)")
+      ));
+    }, timeoutMs);
+  });
 }
 
 // ---------- helpers ----------
